@@ -1,0 +1,1694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deck — Music Player</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.15/hls.min.js"></script>
+<style>
+  :root{
+    --bg: #0A0A0A;
+    --panel: #121212;
+    --panel-raised: #1F1F1F;
+    --line: #2A2A2A;
+    --amber: #1DB954;
+    --amber-dim: #1a8f44;
+    --red: #E23E3E;
+    --text: #FFFFFF;
+    --text-dim: #B3B3B3;
+    --text-faint: #6A6A6A;
+  }
+
+  *{ box-sizing:border-box; margin:0; padding:0; }
+
+  body{
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    min-height: 100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding: 24px 16px;
+    background-image:
+      radial-gradient(circle at 20% 10%, rgba(232,163,61,0.05), transparent 40%),
+      radial-gradient(circle at 80% 90%, rgba(198,65,43,0.04), transparent 40%);
+  }
+
+  .deck{
+    width: 100%;
+    max-width: 420px;
+    height: 88vh;
+    max-height: 780px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: 0 30px 60px -20px rgba(0,0,0,0.6);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .content-scroll{
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+  }
+  .content-scroll::-webkit-scrollbar{ width: 6px; }
+  .content-scroll::-webkit-scrollbar-thumb{ background: var(--line); border-radius: 4px; }
+
+  .player-dock{
+    flex: none;
+    border-top: 1px solid var(--line);
+    background: var(--panel);
+  }
+
+  /* Header */
+  .header{
+    padding: 20px 22px 16px;
+    border-bottom: 1px solid var(--line);
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+  }
+  .brand{
+    font-family: 'Fraunces', serif;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  .brand span{ color: var(--amber); }
+  .count{
+    font-size: 11px;
+    color: var(--text-faint);
+    display: none;
+  }
+
+  /* Stage: disc + track info */
+  .stage{
+    padding: 12px 22px 4px;
+    display:flex;
+    gap: 14px;
+    align-items:center;
+  }
+
+  .disc-wrap{
+    width: 48px;
+    height: 48px;
+    flex: none;
+    position: relative;
+  }
+  .disc{
+    width:100%; height:100%;
+    border-radius: 50%;
+    background:
+      repeating-radial-gradient(circle at center, #14110F 0px, #14110F 2px, #1c1815 2px, #1c1815 4px);
+    border: 1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    animation: spin 6s linear infinite;
+    animation-play-state: paused;
+  }
+  .disc.spinning{ animation-play-state: running; }
+  .disc-label{
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--amber);
+    box-shadow: inset 0 0 0 3px var(--panel);
+  }
+  @keyframes spin{ to{ transform: rotate(360deg); } }
+
+  .track-meta{ min-width:0; flex:1; }
+  .track-title{
+    font-family:'Fraunces', serif;
+    font-size: 19px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .track-sub{
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow:hidden;
+    text-overflow: ellipsis;
+  }
+  .track-empty{ color: var(--text-faint); }
+
+  /* Seek */
+  .seek-row{
+    padding: 0 22px;
+  }
+  .seek-bar{
+    -webkit-appearance:none;
+    appearance:none;
+    width:100%;
+    height: 3px;
+    background: var(--line);
+    border-radius: 2px;
+    outline:none;
+    cursor:pointer;
+  }
+  .seek-bar::-webkit-slider-thumb{
+    -webkit-appearance:none;
+    width:11px; height:11px;
+    border-radius:50%;
+    background: var(--amber);
+    border: none;
+    margin-top: -4px;
+  }
+  .seek-bar::-moz-range-thumb{
+    width:11px; height:11px;
+    border-radius:50%;
+    background: var(--amber);
+    border:none;
+  }
+  .seek-bar::-webkit-slider-runnable-track{ height:3px; border-radius:2px; }
+
+  .time-row{
+    display:flex; justify-content:space-between;
+    font-size: 10px;
+    color: var(--text-faint);
+    padding: 6px 22px 0;
+  }
+
+  /* Transport controls */
+  .transport{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap: 22px;
+    padding: 10px 22px 6px;
+  }
+  .btn{
+    background:none;
+    border:none;
+    color: var(--text);
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    opacity: 0.85;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .btn:hover{ opacity:1; }
+  .btn:active{ transform: scale(0.92); }
+  .btn svg{ width:18px; height:18px; }
+  .btn-play{
+    width: 52px; height:52px;
+    border-radius:50%;
+    background: var(--amber);
+    color: var(--bg);
+    opacity:1;
+  }
+  .btn-play svg{ width:20px; height:20px; }
+  .btn-play:hover{ background:#f0b158; }
+  .btn-toggle.active{ color: var(--amber); opacity:1; }
+
+  /* Volume */
+  .volume-row{
+    display:flex; align-items:center; gap:10px;
+    padding: 10px 22px 20px;
+    color: var(--text-faint);
+  }
+  .volume-row svg{ width:14px; height:14px; flex:none; }
+  .vol-bar{
+    -webkit-appearance:none;
+    appearance:none;
+    width:100%;
+    height:3px;
+    background: var(--line);
+    border-radius:2px;
+    outline:none;
+    cursor:pointer;
+  }
+  .vol-bar::-webkit-slider-thumb{
+    -webkit-appearance:none;
+    width:9px; height:9px;
+    border-radius:50%;
+    background: var(--text-dim);
+  }
+
+  /* Playlist */
+  .playlist-header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 16px 22px 8px;
+    border-top: 1px solid var(--line);
+  }
+  .playlist-title{
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    color: var(--text-faint);
+  }
+  .add-btn{
+    font-size: 11px;
+    color: var(--amber);
+    background: none;
+    border: 1px solid var(--amber-dim);
+    border-radius: 6px;
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+  .add-btn:hover{ background: rgba(232,163,61,0.08); }
+
+  .playlist{
+    padding: 4px 10px 20px;
+  }
+
+  .track-row{
+    display:flex;
+    align-items:center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .track-row:hover{ background: var(--panel-raised); }
+  .track-row.playing{ background: rgba(232,163,61,0.08); }
+
+  .track-num{
+    width: 18px;
+    font-size: 11px;
+    color: var(--text-faint);
+    text-align:center;
+    flex:none;
+  }
+  .track-row.playing .track-num{ color: var(--amber); }
+
+  .track-info{ min-width:0; flex:1; }
+  .track-info .name{
+    font-family: 'Fraunces', serif;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .track-row.playing .name{ color: var(--amber); }
+  .track-info .sub{
+    font-size: 10px;
+    color: var(--text-faint);
+    margin-top: 2px;
+  }
+
+  .remove-btn{
+    flex:none;
+    background:none;
+    border:none;
+    color: var(--text-faint);
+    cursor:pointer;
+    padding: 4px;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+  .track-row:hover .remove-btn{ opacity: 0.7; }
+  .remove-btn:hover{ color: var(--red); opacity:1 !important; }
+  .remove-btn svg{ width:13px; height:13px; }
+
+  .empty-state{
+    text-align:center;
+    padding: 36px 22px 40px;
+    color: var(--text-faint);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .empty-state .big{
+    font-family:'Fraunces', serif;
+    font-size: 16px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    display:block;
+  }
+  .empty-add{
+    margin-top: 14px;
+    display:inline-block;
+    font-size: 11px;
+    color: var(--amber);
+    background: none;
+    border: 1px solid var(--amber-dim);
+    border-radius: 6px;
+    padding: 8px 16px;
+    cursor: pointer;
+  }
+  .empty-add:hover{ background: rgba(232,163,61,0.08); }
+
+  #file-input{ display:none; }
+
+  /* Bottom nav */
+  .mode-tabs{
+    display:flex;
+    flex: none;
+    border-top: 1px solid var(--line);
+    background: var(--bg);
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+  .mode-tab{
+    flex: 1;
+    display:flex;
+    flex-direction: column;
+    align-items:center;
+    gap: 4px;
+    background:none;
+    border:none;
+    color: var(--text-faint);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.3px;
+    padding: 6px 2px;
+    cursor:pointer;
+  }
+  .mode-tab svg{ width: 20px; height: 20px; }
+  .mode-tab.active{ color: var(--amber); }
+
+  .live-badge{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap: 6px;
+    padding: 10px 22px 2px;
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    color: var(--red);
+  }
+  .live-dot{
+    width:6px; height:6px;
+    border-radius:50%;
+    background: var(--red);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse{
+    0%,100%{ opacity:1; }
+    50%{ opacity:0.3; }
+  }
+
+  .radio-form{
+    display:flex;
+    flex-direction:column;
+    gap: 8px;
+    padding: 12px 22px 6px;
+  }
+  .radio-form input{
+    background: var(--panel-raised);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    padding: 9px 10px;
+    outline:none;
+  }
+  .radio-form input:focus{ border-color: var(--amber-dim); }
+  .radio-form input::placeholder{ color: var(--text-faint); }
+  .radio-form-actions{
+    display:flex;
+    justify-content:flex-end;
+  }
+  .radio-add-confirm{
+    font-size: 11px;
+    color: var(--amber);
+    background: none;
+    border: 1px solid var(--amber-dim);
+    border-radius: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+  }
+  .radio-add-confirm:hover{ background: rgba(232,163,61,0.08); }
+  .radio-hint{
+    font-size: 10px;
+    color: var(--text-faint);
+    padding: 0 22px 10px;
+    line-height: 1.5;
+  }
+
+  .station-row .track-num{ color: var(--text-faint); }
+  .station-row.playing .track-num{ color: var(--red); }
+  .station-row.playing .name{ color: var(--red); }
+
+  .search-row{
+    display:flex;
+    gap: 8px;
+    padding: 0 22px 10px;
+  }
+  .search-row input{
+    flex:1;
+    background: var(--panel-raised);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    padding: 9px 10px;
+    outline:none;
+  }
+  .search-row input:focus{ border-color: var(--amber-dim); }
+  .search-row input::placeholder{ color: var(--text-faint); }
+  .search-go{
+    background: var(--amber);
+    color: var(--bg);
+    border:none;
+    border-radius: 6px;
+    padding: 0 14px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .search-go:hover{ background: #f0b158; }
+
+  .chips{
+    display:flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0 22px 12px;
+  }
+  .chip{
+    font-size: 10.5px;
+    color: var(--text-dim);
+    background: var(--panel-raised);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 5px 11px;
+    cursor:pointer;
+  }
+  .chip:hover{ border-color: var(--amber-dim); color: var(--amber); }
+
+  .search-results{
+    padding: 0 10px 6px;
+  }
+  .search-status{
+    padding: 4px 12px 10px;
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+  .result-row{
+    display:flex;
+    align-items:center;
+    gap: 12px;
+    padding: 9px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .result-row:hover{ background: var(--panel-raised); }
+  .result-info{ min-width:0; flex:1; }
+  .result-info .name{
+    font-family:'Fraunces', serif;
+    font-size: 13.5px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .result-info .sub{
+    font-size: 10px;
+    color: var(--text-faint);
+    margin-top: 2px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .result-add{
+    flex:none;
+    background:none;
+    border: 1px solid var(--amber-dim);
+    color: var(--amber);
+    border-radius: 6px;
+    font-size: 11px;
+    padding: 5px 10px;
+    cursor:pointer;
+  }
+  .result-add:hover{ background: rgba(232,163,61,0.08); }
+  .result-add:disabled{
+    color: var(--text-faint);
+    border-color: var(--line);
+    cursor: default;
+  }
+
+  .section-label{
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    color: var(--text-faint);
+    padding: 12px 22px 6px;
+  }
+
+  .error-banner{
+    display:none;
+    margin: 0 22px 12px;
+    padding: 8px 10px;
+    background: rgba(198,65,43,0.08);
+    border: 1px solid rgba(198,65,43,0.35);
+    border-radius: 6px;
+    font-size: 10.5px;
+    color: #E39383;
+    line-height: 1.5;
+  }
+
+  /* Drive tab */
+  .drive-form{
+    display:flex;
+    flex-direction:column;
+    gap: 8px;
+    padding: 12px 22px 10px;
+  }
+  .drive-form input{
+    background: var(--panel-raised);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    padding: 9px 10px;
+    outline:none;
+  }
+  .drive-form input:focus{ border-color: var(--amber-dim); }
+  .drive-form input::placeholder{ color: var(--text-faint); }
+
+  .artist-group{ margin-bottom: 4px; }
+  .artist-heading{
+    font-family:'Fraunces', serif;
+    font-size: 13px;
+    color: var(--amber);
+    padding: 10px 12px 4px;
+  }
+  .drive-row .track-info .name{ font-size: 13.5px; }
+  .drive-actions{
+    display:flex;
+    gap: 4px;
+    flex:none;
+  }
+  .icon-btn{
+    background:none;
+    border: 1px solid var(--line);
+    color: var(--text-dim);
+    border-radius: 6px;
+    padding: 5px 7px;
+    cursor:pointer;
+    font-size: 10px;
+    display:flex;
+    align-items:center;
+    gap: 4px;
+  }
+  .icon-btn:hover{ border-color: var(--amber-dim); color: var(--amber); }
+  .icon-btn svg{ width:12px; height:12px; }
+  .icon-btn.cached{ color: var(--amber); border-color: var(--amber-dim); }
+
+  .owner-only{ display: none !important; }
+  body.unlocked .owner-only{ display: flex !important; }
+  body.unlocked .add-btn.owner-only{ display: inline-block !important; }
+
+  .lock-btn{
+    background:none;
+    border: 1px solid var(--line);
+    color: var(--text-faint);
+    border-radius: 20px;
+    padding: 5px 10px;
+    font-size: 10px;
+    display:flex;
+    align-items:center;
+    gap: 5px;
+    cursor:pointer;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .lock-btn svg{ width:11px; height:11px; }
+  body.unlocked .lock-btn{ color: var(--amber); border-color: var(--amber-dim); }
+</style>
+</head>
+<body>
+
+<div class="deck">
+  <div class="header">
+    <div class="brand">deck<span>.</span></div>
+    <button class="lock-btn" id="lock-btn" title="Unlock editing">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
+      <span id="lock-label">Locked</span>
+    </button>
+    <div class="count" id="track-count">0 tracks</div>
+  </div>
+
+  <div class="content-scroll" id="content-scroll">
+
+    <div id="drive-panel">
+      <div class="playlist-header owner-only">
+        <div class="playlist-title">SYNC WHOLE FOLDER</div>
+        <button class="add-btn owner-only" id="add-sync-btn">+ Set up</button>
+      </div>
+      <div class="drive-form owner-only" id="sync-form" style="display:none">
+        <input type="text" id="sync-script-url" placeholder="Apps Script Web app URL">
+        <input type="text" id="sync-folder-id" placeholder="Drive folder ID">
+        <div class="radio-form-actions">
+          <button class="radio-add-confirm" id="sync-go">Sync folder</button>
+        </div>
+      </div>
+      <div class="radio-hint owner-only" id="sync-hint">
+        One-time setup: deploy the folder-reader script I gave you, paste its Web app URL and your folder ID here, then tap "Sync folder" — every audio file inside gets added automatically, sorted by artist from filenames like "Artist - Title.mp3". Re-run Sync anytime you add new songs to the folder.
+      </div>
+
+      <div class="playlist-header">
+        <div class="playlist-title">GOOGLE DRIVE SONGS</div>
+        <button class="add-btn owner-only" id="add-drive-btn">+ Add song manually</button>
+      </div>
+      <div class="drive-form owner-only" id="drive-form" style="display:none">
+        <input type="text" id="drive-title" placeholder="Song title">
+        <input type="text" id="drive-artist" placeholder="Artist">
+        <input type="text" id="drive-link" placeholder="Google Drive share link">
+        <div class="radio-form-actions">
+          <button class="radio-add-confirm" id="drive-save">Add</button>
+        </div>
+      </div>
+      <div class="radio-hint">
+        Right-click a file in Drive → Share → "Anyone with the link" → Copy link, then paste it here. Songs are grouped by artist below and play by streaming straight from Drive. The ⇩ icon tries to cache a song for offline playback — Drive doesn't always allow that, so if it fails, downloading the file and adding it under Library → "+ Add files" guarantees offline playback instead.
+      </div>
+      <div class="playlist" id="drive-list"></div>
+    </div>
+
+    <div id="radio-panel" style="display:none">
+      <div class="playlist-header">
+        <div class="playlist-title">FIND A LOCAL STATION</div>
+      </div>
+      <div class="search-row">
+        <input type="text" id="station-search" placeholder="Search e.g. Big FM, Vividh Bharati, Radio Dhoom">
+        <button class="search-go" id="search-go">Search</button>
+      </div>
+      <div class="chips">
+        <button class="chip" data-q="Vividh Bharati">Vividh Bharati</button>
+        <button class="chip" data-q="AIR FM Rainbow">AIR FM Rainbow</button>
+        <button class="chip" data-q="Big FM">92.7 Big FM</button>
+        <button class="chip" data-q="Radio Dhoom">Radio Dhoom</button>
+        <button class="chip" data-q="Radio Mirchi">Radio Mirchi</button>
+        <button class="chip" data-q="Red FM India">Red FM</button>
+      </div>
+      <div class="search-status" id="search-status" style="display:none"></div>
+      <div class="search-results" id="search-results"></div>
+
+      <div class="playlist-header">
+        <div class="playlist-title">MY STATIONS</div>
+        <button class="add-btn owner-only" id="add-station-btn">+ Add by URL</button>
+      </div>
+      <div class="radio-form owner-only" id="radio-form" style="display:none">
+        <input type="text" id="station-name" placeholder="Station name (e.g. Big FM 92.7)">
+        <input type="text" id="station-url" placeholder="Stream URL (direct .mp3 / .aac / icecast link)">
+        <div class="radio-form-actions">
+          <button class="radio-add-confirm" id="station-save">Add</button>
+        </div>
+      </div>
+      <div class="playlist" id="station-list"></div>
+    </div>
+
+    <div id="library-panel" style="display:none">
+      <div class="playlist-header">
+        <div class="playlist-title">DOWNLOADED / LOCAL FILES</div>
+        <button class="add-btn" id="add-btn">+ Add files</button>
+      </div>
+      <div class="playlist" id="playlist"></div>
+    </div>
+
+  </div><!-- /content-scroll -->
+
+  <div class="player-dock">
+    <div class="seek-row">
+      <input type="range" class="seek-bar" id="seek" value="0" min="0" max="100" step="0.1">
+    </div>
+    <div class="time-row" id="time-row">
+      <span id="time-current">0:00</span>
+      <span id="time-duration">0:00</span>
+    </div>
+    <div class="live-badge" id="live-badge" style="display:none">
+      <span class="live-dot"></span> LIVE
+    </div>
+    <div class="error-banner" id="error-banner"></div>
+
+    <div class="stage">
+      <div class="disc-wrap">
+        <div class="disc" id="disc">
+          <div class="disc-label"></div>
+        </div>
+      </div>
+      <div class="track-meta">
+        <div class="track-title track-empty" id="now-title">Nothing loaded</div>
+        <div class="track-sub" id="now-sub">Add audio files to begin</div>
+      </div>
+    </div>
+
+    <div class="transport">
+      <button class="btn btn-toggle" id="shuffle-btn" title="Shuffle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+      </button>
+      <button class="btn" id="prev-btn" title="Previous">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM9.5 12l10-7v14z"/></svg>
+      </button>
+      <button class="btn btn-play" id="play-btn" title="Play">
+        <svg id="play-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        <svg id="pause-icon" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+      </button>
+      <button class="btn" id="next-btn" title="Next">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4.5 5l10 7-10 7z"/></svg>
+      </button>
+      <button class="btn btn-toggle" id="repeat-btn" title="Repeat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+      </button>
+    </div>
+
+    <div class="volume-row" style="display:none">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3z"/></svg>
+      <input type="range" class="vol-bar" id="volume" min="0" max="1" step="0.01" value="0.8">
+    </div>
+  </div><!-- /player-dock -->
+
+  <div class="mode-tabs">
+    <button class="mode-tab active" id="tab-drive">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l9 8h-3v9h-5v-6H11v6H6v-9H3z"/></svg>
+      <span>Home</span>
+    </button>
+    <button class="mode-tab" id="tab-radio">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 010 8.49M7.76 16.24a6 6 0 010-8.49M19.07 4.93a10 10 0 010 14.14M4.93 19.07a10 10 0 010-14.14"/></svg>
+      <span>Radio</span>
+    </button>
+    <button class="mode-tab" id="tab-library">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      <span>Library</span>
+    </button>
+  </div>
+
+  <input type="file" id="file-input" accept="audio/*" multiple>
+</div>
+
+<script>
+  const audio = new Audio();
+  let tracks = [];
+  let currentIndex = -1;
+  let isPlaying = false;
+  let shuffleOn = false;
+  let repeatMode = 0; // 0 off, 1 repeat all, 2 repeat one
+
+  let stations = [];
+  let currentStationIndex = -1;
+  let isRadioMode = false; // true when a radio station is the active source
+  let mode = 'drive'; // 'library' | 'radio' | 'drive' — which panel is showing
+
+  let driveSongs = []; // {id, title, artist, playUrl} — shared across everyone with the link
+  let currentDriveIndex = -1;
+  let isDriveMode = false;
+
+  const fileInput = document.getElementById('file-input');
+  const addBtn = document.getElementById('add-btn');
+  const playlistEl = document.getElementById('playlist');
+  const trackCountEl = document.getElementById('track-count');
+  const nowTitle = document.getElementById('now-title');
+  const nowSub = document.getElementById('now-sub');
+  const disc = document.getElementById('disc');
+  const playBtn = document.getElementById('play-btn');
+  const playIcon = document.getElementById('play-icon');
+  const pauseIcon = document.getElementById('pause-icon');
+  const prevBtn = document.getElementById('prev-btn');
+  const nextBtn = document.getElementById('next-btn');
+  const shuffleBtn = document.getElementById('shuffle-btn');
+  const repeatBtn = document.getElementById('repeat-btn');
+  const seek = document.getElementById('seek');
+  const timeCurrent = document.getElementById('time-current');
+  const timeDuration = document.getElementById('time-duration');
+  const volume = document.getElementById('volume');
+  const seekRow = document.querySelector('.seek-row');
+  const timeRow = document.getElementById('time-row');
+  const liveBadge = document.getElementById('live-badge');
+
+  const tabLibrary = document.getElementById('tab-library');
+  const tabRadio = document.getElementById('tab-radio');
+  const tabDrive = document.getElementById('tab-drive');
+  const libraryPanel = document.getElementById('library-panel');
+  const radioPanel = document.getElementById('radio-panel');
+  const drivePanel = document.getElementById('drive-panel');
+  const errorBanner = document.getElementById('error-banner');
+
+  tabLibrary.addEventListener('click', () => switchMode('library'));
+  tabRadio.addEventListener('click', () => switchMode('radio'));
+  tabDrive.addEventListener('click', () => switchMode('drive'));
+
+  function switchMode(m){
+    mode = m;
+    tabLibrary.classList.toggle('active', m === 'library');
+    tabRadio.classList.toggle('active', m === 'radio');
+    tabDrive.classList.toggle('active', m === 'drive');
+    libraryPanel.style.display = m === 'library' ? 'block' : 'none';
+    radioPanel.style.display = m === 'radio' ? 'block' : 'none';
+    drivePanel.style.display = m === 'drive' ? 'block' : 'none';
+  }
+
+  function showError(msg){
+    errorBanner.textContent = msg;
+    errorBanner.style.display = 'block';
+  }
+  function clearError(){
+    errorBanner.style.display = 'none';
+  }
+
+  const addStationBtn = document.getElementById('add-station-btn');
+  const radioForm = document.getElementById('radio-form');
+  const stationNameInput = document.getElementById('station-name');
+  const stationUrlInput = document.getElementById('station-url');
+  const stationSaveBtn = document.getElementById('station-save');
+  const stationListEl = document.getElementById('station-list');
+
+  const addSyncBtn = document.getElementById('add-sync-btn');
+  const syncForm = document.getElementById('sync-form');
+  const syncScriptUrlInput = document.getElementById('sync-script-url');
+  const syncFolderIdInput = document.getElementById('sync-folder-id');
+  const syncGoBtn = document.getElementById('sync-go');
+
+  addSyncBtn.addEventListener('click', () => {
+    syncForm.style.display = syncForm.style.display === 'none' ? 'flex' : 'none';
+    if (syncForm.style.display === 'flex') syncScriptUrlInput.focus();
+  });
+
+  syncGoBtn.addEventListener('click', () => runFolderSync());
+
+  async function runFolderSync(){
+    const scriptUrl = syncScriptUrlInput.value.trim();
+    const folderId = syncFolderIdInput.value.trim();
+    if (!scriptUrl || !folderId) return;
+
+    syncGoBtn.textContent = 'Syncing…';
+    syncGoBtn.disabled = true;
+
+    try {
+      const sep = scriptUrl.includes('?') ? '&' : '?';
+      const res = await fetch(`${scriptUrl}${sep}folderId=${encodeURIComponent(folderId)}`);
+      if (!res.ok) throw new Error('bad response');
+      const files = await res.json();
+
+      let added = 0;
+      files.forEach(f => {
+        if (driveSongs.some(s => s.id === f.id)) return; // already synced
+        const { title, artist } = parseFilename(f.name);
+        driveSongs.push({ id: f.id, title, artist, playUrl: f.url });
+        added++;
+      });
+
+      saveDriveSongs();
+      renderDriveList();
+      clearError();
+      syncGoBtn.textContent = `Synced — ${added} new song${added === 1 ? '' : 's'} added`;
+    } catch (e) {
+      showError("Couldn't reach that script — double-check the Web app URL and that access is set to \"Anyone,\" then try again.");
+      syncGoBtn.textContent = 'Sync folder';
+    } finally {
+      syncGoBtn.disabled = false;
+      setTimeout(() => { syncGoBtn.textContent = 'Sync folder'; }, 3000);
+    }
+  }
+
+  const addDriveBtn = document.getElementById('add-drive-btn');
+  const driveForm = document.getElementById('drive-form');
+  const driveTitleInput = document.getElementById('drive-title');
+  const driveArtistInput = document.getElementById('drive-artist');
+  const driveLinkInput = document.getElementById('drive-link');
+  const driveSaveBtn = document.getElementById('drive-save');
+  const driveListEl = document.getElementById('drive-list');
+
+  const stationSearchInput = document.getElementById('station-search');
+  const searchGoBtn = document.getElementById('search-go');
+  const searchStatus = document.getElementById('search-status');
+  const searchResultsEl = document.getElementById('search-results');
+  const chips = document.querySelectorAll('.chip');
+
+  const RADIO_API = 'https://de1.api.radio-browser.info';
+
+  chips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      stationSearchInput.value = chip.dataset.q;
+      runStationSearch(chip.dataset.q);
+    });
+  });
+
+  searchGoBtn.addEventListener('click', () => runStationSearch(stationSearchInput.value.trim()));
+  stationSearchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') runStationSearch(stationSearchInput.value.trim());
+  });
+
+  async function runStationSearch(query){
+    if (!query) return;
+    searchStatus.style.display = 'block';
+    searchStatus.textContent = 'Searching…';
+    searchResultsEl.innerHTML = '';
+
+    try {
+      const url = `${RADIO_API}/json/stations/search?name=${encodeURIComponent(query)}&countrycode=IN&limit=12&hidebroken=true&order=clickcount&reverse=true`;
+      const res = await fetch(url, { headers: { 'User-Agent': 'DeckMusicPlayer/1.0' } });
+      if (!res.ok) throw new Error('bad response');
+      const data = await res.json();
+
+      if (!data || data.length === 0) {
+        searchStatus.textContent = `No live results for "${query}". Try a shorter or different name.`;
+        return;
+      }
+
+      searchStatus.style.display = 'none';
+      searchResultsEl.innerHTML = data.map((s, i) => `
+        <div class="result-row" data-play="${i}">
+          <div class="result-info">
+            <div class="name">${escapeHtml(s.name || 'Untitled station')}</div>
+            <div class="sub">${escapeHtml([s.state, s.codec, s.bitrate ? s.bitrate + 'kbps' : ''].filter(Boolean).join(' · '))}</div>
+          </div>
+          <button class="result-add owner-only" data-i="${i}">+ Add</button>
+        </div>
+      `).join('');
+
+      searchResultsEl.querySelectorAll('.result-row').forEach(row => {
+        row.addEventListener('click', (e) => {
+          if (e.target.closest('.result-add')) return;
+          const s = data[parseInt(row.dataset.play)];
+          const streamUrl = s.url_resolved || s.url;
+          if (!streamUrl) { showError('This station has no playable stream link.'); return; }
+          playStationObject({ name: s.name || 'Untitled station', url: streamUrl });
+          playAudio();
+        });
+      });
+
+      searchResultsEl.querySelectorAll('.result-add').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const s = data[parseInt(btn.dataset.i)];
+          const streamUrl = s.url_resolved || s.url;
+          if (!streamUrl) return;
+          stations.push({ name: s.name || 'Untitled station', url: streamUrl });
+          saveStations();
+          renderStations();
+          btn.textContent = 'Added';
+          btn.disabled = true;
+        });
+      });
+    } catch (err) {
+      searchStatus.textContent = 'Could not reach the station directory right now — try again in a moment, or add a stream URL manually below.';
+    }
+  }
+
+  addStationBtn.addEventListener('click', () => {
+    radioForm.style.display = radioForm.style.display === 'none' ? 'flex' : 'none';
+    if (radioForm.style.display === 'flex') stationNameInput.focus();
+  });
+
+  async function loadStations(){
+    try {
+      const res = await window.storage.get('radio-stations', true);
+      stations = res ? JSON.parse(res.value) : [];
+    } catch (e) {
+      stations = [];
+    }
+    renderStations();
+  }
+
+  async function saveStations(){
+    try {
+      await window.storage.set('radio-stations', JSON.stringify(stations), true);
+    } catch (e) {
+      showError("Couldn't save your station list — it may not persist next time.");
+    }
+  }
+
+  stationSaveBtn.addEventListener('click', () => {
+    const name = stationNameInput.value.trim();
+    const url = stationUrlInput.value.trim();
+    if (!name || !url) return;
+    stations.push({ name, url });
+    stationNameInput.value = '';
+    stationUrlInput.value = '';
+    radioForm.style.display = 'none';
+    saveStations();
+    renderStations();
+  });
+
+  function renderStations(){
+    if (stations.length === 0) {
+      stationListEl.innerHTML = `
+        <div class="empty-state">
+          <span class="big">No stations yet</span>
+          Add a station's direct stream link to start listening live.
+        </div>`;
+      return;
+    }
+    stationListEl.innerHTML = stations.map((s, i) => `
+      <div class="track-row station-row ${i === currentStationIndex && isRadioMode ? 'playing' : ''}" data-index="${i}">
+        <div class="track-num">${i === currentStationIndex && isRadioMode && isPlaying ? '●' : '📡'}</div>
+        <div class="track-info">
+          <div class="name">${escapeHtml(s.name)}</div>
+          <div class="sub">${escapeHtml(s.url)}</div>
+        </div>
+        <button class="remove-btn owner-only" data-remove="${i}" title="Remove">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    `).join('');
+
+    stationListEl.querySelectorAll('.station-row').forEach(row => {
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('.remove-btn')) return;
+        const i = parseInt(row.dataset.index);
+        loadStation(i);
+        playAudio();
+      });
+    });
+
+    stationListEl.querySelectorAll('.remove-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const i = parseInt(btn.dataset.remove);
+        removeStation(i);
+      });
+    });
+  }
+
+  function removeStation(i){
+    if (i === currentStationIndex && isRadioMode) {
+      pauseAudio();
+      currentStationIndex = -1;
+      isRadioMode = false;
+      audio.src = '';
+      nowTitle.textContent = 'Nothing loaded';
+      nowTitle.classList.add('track-empty');
+      nowSub.textContent = 'Add audio files to begin';
+    } else if (i < currentStationIndex) {
+      currentStationIndex--;
+    }
+    stations.splice(i, 1);
+    saveStations();
+    renderStations();
+  }
+
+  function playStationObject(s){
+    isRadioMode = true;
+    isDriveMode = false;
+    currentIndex = -1;
+    setAudioSource(s.url, { isLive: true });
+    nowTitle.textContent = s.name;
+    nowTitle.classList.remove('track-empty');
+    nowSub.textContent = 'Live radio';
+    updateMediaSession(s.name, 'Live radio');
+    seekRow.style.display = 'none';
+    timeRow.style.display = 'none';
+    liveBadge.style.display = 'flex';
+    renderPlaylist();
+    renderStations();
+  }
+
+  function loadStation(i){
+    if (i < 0 || i >= stations.length) return;
+    currentStationIndex = i;
+    playStationObject(stations[i]);
+  }
+
+  let hls = null;
+
+  function destroyHls(){
+    if (hls) { hls.destroy(); hls = null; }
+  }
+
+  // Central place that actually points <audio> (or hls.js) at a URL.
+  // Handles: .m3u8 (HLS) streams, .m3u/.pls playlist-wrapper files,
+  // and http:// streams that fail under mixed-content on an https page.
+  async function setAudioSource(rawUrl, { isLive = false } = {}){
+    clearError();
+    destroyHls();
+    audio.removeAttribute('src');
+
+    let url = rawUrl;
+    // If we're on https and the stream is http, try the https version first —
+    // many stream hosts serve both, and https avoids the browser silently
+    // blocking mixed content.
+    if (location.protocol === 'https:' && url.startsWith('http://')) {
+      url = 'https://' + url.slice(7);
+    }
+
+    try {
+      if (/\.m3u8(\?|$)/i.test(url)) {
+        if (window.Hls && Hls.isSupported()) {
+          hls = new Hls();
+          hls.loadSource(url);
+          hls.attachMedia(audio);
+          hls.on(Hls.Events.ERROR, (event, data) => {
+            if (data.fatal) {
+              showError(`Couldn't load this stream (${data.details}). It may be offline or blocked — try another station.`);
+            }
+          });
+          return;
+        } else if (audio.canPlayType('application/vnd.apple.mpegurl')) {
+          audio.src = url;
+          return;
+        } else {
+          showError("This stream needs HLS support your browser can't provide here.");
+          return;
+        }
+      }
+
+      if (/\.(m3u|pls)(\?|$)/i.test(url)) {
+        // These are text playlist files, not audio — fetch and pull the real URL out.
+        try {
+          const res = await fetch(url);
+          const text = await res.text();
+          const match = text.match(/^(https?:\/\/\S+)/m) || text.match(/File1=(\S+)/);
+          if (match) {
+            return setAudioSource(match[1], { isLive });
+          }
+        } catch (e) {
+          // fall through and just try the raw url as a last resort
+        }
+      }
+
+      audio.src = url;
+    } catch (e) {
+      showError('Could not load this source.');
+    }
+  }
+
+  // ---------- Owner-only edit lock ----------
+  const OWNER_PIN = '54016'; // change this string to change the PIN
+  const lockBtn = document.getElementById('lock-btn');
+  const lockLabel = document.getElementById('lock-label');
+
+  lockBtn.addEventListener('click', () => {
+    if (document.body.classList.contains('unlocked')) {
+      document.body.classList.remove('unlocked');
+      lockLabel.textContent = 'Locked';
+      lockBtn.title = 'Unlock editing';
+      return;
+    }
+
+    const entered = window.prompt('Enter your PIN to unlock editing:');
+    if (entered === OWNER_PIN) {
+      document.body.classList.add('unlocked');
+      lockLabel.textContent = 'Unlocked';
+    } else if (entered !== null) {
+      showError('Wrong PIN.');
+    }
+  });
+
+  function parseDriveLink(link){
+    const patterns = [
+      /\/d\/([a-zA-Z0-9_-]{20,})/,      // .../file/d/FILE_ID/view
+      /id=([a-zA-Z0-9_-]{20,})/,        // ...?id=FILE_ID
+      /open\?id=([a-zA-Z0-9_-]{20,})/
+    ];
+    for (const p of patterns) {
+      const m = link.match(p);
+      if (m) return m[1];
+    }
+    return null;
+  }
+
+  let locallyCachedIds = new Set(); // which Drive songs THIS browser has actually cached
+
+  async function refreshLocalCacheStatus(){
+    try {
+      const cache = await caches.open('deck-offline-audio');
+      const checks = await Promise.all(driveSongs.map(async s => {
+        const hit = await cache.match(s.playUrl);
+        return hit ? s.id : null;
+      }));
+      locallyCachedIds = new Set(checks.filter(Boolean));
+    } catch (e) { /* Cache API unavailable */ }
+  }
+  async function loadDriveSongs(){
+    try {
+      const res = await window.storage.get('drive-songs', true);
+      driveSongs = res ? JSON.parse(res.value) : [];
+    } catch (e) {
+      driveSongs = [];
+    }
+    await refreshLocalCacheStatus();
+    renderDriveList();
+  }
+
+  async function saveDriveSongs(){
+    try {
+      await window.storage.set('drive-songs', JSON.stringify(driveSongs), true);
+    } catch (e) {
+      showError("Couldn't save your Drive library — it may not persist next time.");
+    }
+  }
+
+  addDriveBtn.addEventListener('click', () => {
+    driveForm.style.display = driveForm.style.display === 'none' ? 'flex' : 'none';
+    if (driveForm.style.display === 'flex') driveTitleInput.focus();
+  });
+
+  driveSaveBtn.addEventListener('click', () => {
+    const title = driveTitleInput.value.trim();
+    const artist = driveArtistInput.value.trim() || 'Unknown artist';
+    const link = driveLinkInput.value.trim();
+    if (!title || !link) return;
+    const fileId = parseDriveLink(link);
+    if (!fileId) {
+      showError("Couldn't find a file ID in that link — make sure it's a Drive share link with sharing set to \"Anyone with the link\".");
+      return;
+    }
+    const playUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+    driveSongs.push({ id: fileId, title, artist, playUrl });
+    driveTitleInput.value = '';
+    driveArtistInput.value = '';
+    driveLinkInput.value = '';
+    driveForm.style.display = 'none';
+    saveDriveSongs();
+    renderDriveList();
+  });
+
+  function renderDriveList(){
+    if (driveSongs.length === 0) {
+      driveListEl.innerHTML = `
+        <div class="empty-state">
+          <span class="big">No Drive songs yet</span>
+          Add shareable links above — songs will be grouped by artist automatically.
+        </div>`;
+      return;
+    }
+
+    const artists = [...new Set(driveSongs.map(s => s.artist))].sort((a, b) => a.localeCompare(b));
+
+    driveListEl.innerHTML = artists.map(artist => {
+      const songs = driveSongs.filter(s => s.artist === artist);
+      const rows = songs.map(s => {
+        const i = driveSongs.indexOf(s);
+        const playing = i === currentDriveIndex && isDriveMode;
+        const cachedHere = locallyCachedIds.has(s.id);
+        return `
+        <div class="track-row drive-row ${playing ? 'playing' : ''}" data-index="${i}">
+          <div class="track-num">${playing && isPlaying ? '♪' : '♫'}</div>
+          <div class="track-info">
+            <div class="name">${escapeHtml(s.title)}</div>
+            <div class="sub">${cachedHere ? 'Saved offline on this device' : 'Streaming from Drive'}</div>
+          </div>
+          <div class="drive-actions">
+            <button class="icon-btn ${cachedHere ? 'cached' : ''}" data-offline="${i}" title="Save offline">${cachedHere ? '✓' : '⇩'}</button>
+            <button class="icon-btn" data-download="${i}" title="Download">↓</button>
+            <button class="remove-btn owner-only" data-remove="${i}" style="opacity:0.6" title="Remove">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        </div>`;
+      }).join('');
+      return `<div class="artist-group"><div class="artist-heading">${escapeHtml(artist)}</div>${rows}</div>`;
+    }).join('');
+
+    driveListEl.querySelectorAll('.drive-row').forEach(row => {
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        const i = parseInt(row.dataset.index);
+        loadDriveSong(i);
+        playAudio();
+      });
+    });
+    driveListEl.querySelectorAll('[data-offline]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        saveOffline(parseInt(btn.dataset.offline));
+      });
+    });
+    driveListEl.querySelectorAll('[data-download]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.open(driveSongs[parseInt(btn.dataset.download)].playUrl, '_blank');
+      });
+    });
+    driveListEl.querySelectorAll('[data-remove]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        removeDriveSong(parseInt(btn.dataset.remove));
+      });
+    });
+  }
+
+  function removeDriveSong(i){
+    if (i === currentDriveIndex && isDriveMode) {
+      pauseAudio();
+      currentDriveIndex = -1;
+      isDriveMode = false;
+      audio.removeAttribute('src');
+      nowTitle.textContent = 'Nothing loaded';
+      nowTitle.classList.add('track-empty');
+      nowSub.textContent = 'Add audio files to begin';
+    } else if (i < currentDriveIndex) {
+      currentDriveIndex--;
+    }
+    driveSongs.splice(i, 1);
+    saveDriveSongs();
+    renderDriveList();
+  }
+
+  async function loadDriveSong(i){
+    if (i < 0 || i >= driveSongs.length) return;
+    currentDriveIndex = i;
+    isDriveMode = true;
+    isRadioMode = false;
+    currentIndex = -1;
+    currentStationIndex = -1;
+    seekRow.style.display = 'block';
+    timeRow.style.display = 'flex';
+    liveBadge.style.display = 'none';
+    const s = driveSongs[i];
+    nowTitle.textContent = s.title;
+    nowTitle.classList.remove('track-empty');
+    nowSub.textContent = s.artist;
+    updateMediaSession(s.title, s.artist);
+
+    // Play from offline cache if we managed to save it; otherwise stream from Drive.
+    let playedFromCache = false;
+    try {
+      const cache = await caches.open('deck-offline-audio');
+      const cached = await cache.match(s.playUrl);
+      if (cached) {
+        const blob = await cached.blob();
+        audio.src = URL.createObjectURL(blob);
+        playedFromCache = true;
+      }
+    } catch (e) { /* Cache API unavailable — fall through to streaming */ }
+
+    if (!playedFromCache) {
+      setAudioSource(s.playUrl);
+    }
+    renderPlaylist();
+    renderStations();
+    renderDriveList();
+  }
+
+  async function saveOffline(i){
+    const s = driveSongs[i];
+    showError(`Trying to cache "${s.title}" for offline playback…`);
+    try {
+      const cache = await caches.open('deck-offline-audio');
+      const resp = await fetch(s.playUrl, { mode: 'cors' });
+      if (!resp.ok) throw new Error('bad response');
+      await cache.put(s.playUrl, resp);
+      locallyCachedIds.add(s.id);
+      clearError();
+      renderDriveList();
+    } catch (e) {
+      showError(`Couldn't cache "${s.title}" offline on this device — Drive blocks this from most browsers. Download it instead and add it under LIBRARY → "+ Add files" for guaranteed offline playback.`);
+      renderDriveList();
+    }
+  }
+
+  loadDriveSongs();
+
+  audio.volume = 0.8;
+
+  addBtn.addEventListener('click', () => fileInput.click());
+
+  fileInput.addEventListener('change', (e) => {
+    const files = Array.from(e.target.files);
+    files.forEach(file => {
+      const url = URL.createObjectURL(file);
+      const { title, artist } = parseFilename(file.name);
+      tracks.push({ file, url, title, artist, duration: null });
+    });
+    fileInput.value = '';
+    renderPlaylist();
+    if (currentIndex === -1 && tracks.length > 0) {
+      loadTrack(0);
+    }
+  });
+
+  function parseFilename(name){
+    const clean = name.replace(/\.[^/.]+$/, '');
+    if (clean.includes(' - ')) {
+      const [a, b] = clean.split(' - ');
+      return { title: b.trim(), artist: a.trim() };
+    }
+    return { title: clean, artist: 'Unknown artist' };
+  }
+
+  function renderPlaylist(){
+    trackCountEl.textContent = tracks.length + (tracks.length === 1 ? ' track' : ' tracks');
+
+    if (tracks.length === 0) {
+      playlistEl.innerHTML = `
+        <div class="empty-state">
+          <span class="big">Nothing loaded yet</span>
+          Drop in your own audio files — MP3, WAV, M4A, whatever you've got.
+          <br>
+          <button class="empty-add" id="empty-add-btn">+ Add audio files</button>
+        </div>`;
+      document.getElementById('empty-add-btn').addEventListener('click', () => fileInput.click());
+      return;
+    }
+
+    playlistEl.innerHTML = tracks.map((t, i) => `
+      <div class="track-row ${i === currentIndex ? 'playing' : ''}" data-index="${i}">
+        <div class="track-num">${i === currentIndex && isPlaying ? '♪' : i + 1}</div>
+        <div class="track-info">
+          <div class="name">${escapeHtml(t.title)}</div>
+          <div class="sub">${escapeHtml(t.artist)}</div>
+        </div>
+        <button class="remove-btn" data-remove="${i}" title="Remove">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    `).join('');
+
+    playlistEl.querySelectorAll('.track-row').forEach(row => {
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('.remove-btn')) return;
+        const i = parseInt(row.dataset.index);
+        loadTrack(i);
+        playAudio();
+      });
+    });
+
+    playlistEl.querySelectorAll('.remove-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const i = parseInt(btn.dataset.remove);
+        removeTrack(i);
+      });
+    });
+  }
+
+  function escapeHtml(str){
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function removeTrack(i){
+    URL.revokeObjectURL(tracks[i].url);
+    tracks.splice(i, 1);
+    if (i === currentIndex) {
+      pauseAudio();
+      currentIndex = -1;
+      audio.src = '';
+      nowTitle.textContent = 'Nothing loaded';
+      nowTitle.classList.add('track-empty');
+      nowSub.textContent = 'Add audio files to begin';
+    } else if (i < currentIndex) {
+      currentIndex--;
+    }
+    renderPlaylist();
+  }
+
+  function loadTrack(i){
+    if (i < 0 || i >= tracks.length) return;
+    isRadioMode = false;
+    isDriveMode = false;
+    currentStationIndex = -1;
+    currentDriveIndex = -1;
+    seekRow.style.display = 'block';
+    timeRow.style.display = 'flex';
+    liveBadge.style.display = 'none';
+    currentIndex = i;
+    const t = tracks[i];
+    setAudioSource(t.url);
+    nowTitle.textContent = t.title;
+    nowTitle.classList.remove('track-empty');
+    nowSub.textContent = t.artist;
+    updateMediaSession(t.title, t.artist);
+    renderPlaylist();
+    renderStations();
+  }
+
+  function playAudio(){
+    if (currentIndex === -1 && currentStationIndex === -1 && currentDriveIndex === -1) return;
+    audio.play().catch(() => {
+      showError('Playback was blocked — tap play again, or the source may be unreachable.');
+    });
+    isPlaying = true;
+    disc.classList.add('spinning');
+    playIcon.style.display = 'none';
+    pauseIcon.style.display = 'block';
+    renderPlaylist();
+    renderStations();
+    renderDriveList();
+  }
+
+  function pauseAudio(){
+    audio.pause();
+    isPlaying = false;
+    disc.classList.remove('spinning');
+    playIcon.style.display = 'block';
+    pauseIcon.style.display = 'none';
+    renderPlaylist();
+    renderStations();
+    renderDriveList();
+  }
+
+  playBtn.addEventListener('click', () => {
+    if (!isRadioMode && !isDriveMode && currentIndex === -1 && tracks.length > 0) { loadTrack(0); playAudio(); return; }
+    if (currentIndex === -1 && currentStationIndex === -1 && currentDriveIndex === -1) return;
+    isPlaying ? pauseAudio() : playAudio();
+  });
+
+  // ---------- Media Session (lock-screen / background controls) ----------
+  // Note: this only takes effect when the page runs as its own browser tab —
+  // if it's viewed inside Claude's own preview window, the OS won't grant it
+  // lock-screen controls or protect it from being suspended.
+  function updateMediaSession(title, artist){
+    if (!('mediaSession' in navigator)) return;
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: title || 'Deck',
+      artist: artist || '',
+      album: 'Deck'
+    });
+  }
+
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.setActionHandler('play', () => playAudio());
+    navigator.mediaSession.setActionHandler('pause', () => pauseAudio());
+    navigator.mediaSession.setActionHandler('previoustrack', () => prevBtn.click());
+    navigator.mediaSession.setActionHandler('nexttrack', () => nextBtn.click());
+    navigator.mediaSession.setActionHandler('seekto', (details) => {
+      if (!isRadioMode && details.seekTime != null && isFinite(audio.duration)) {
+        audio.currentTime = details.seekTime;
+      }
+    });
+  }
+
+  audio.addEventListener('play', () => {
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+  });
+  audio.addEventListener('pause', () => {
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+  });
+
+  prevBtn.addEventListener('click', () => {
+    if (isRadioMode) {
+      if (stations.length < 2) return;
+      const i = (currentStationIndex - 1 + stations.length) % stations.length;
+      loadStation(i);
+      playAudio();
+      return;
+    }
+    if (isDriveMode) {
+      if (driveSongs.length < 2) return;
+      const i = (currentDriveIndex - 1 + driveSongs.length) % driveSongs.length;
+      loadDriveSong(i);
+      playAudio();
+      return;
+    }
+    if (tracks.length === 0) return;
+    if (audio.currentTime > 3) { audio.currentTime = 0; return; }
+    let i = shuffleOn ? randomIndex() : (currentIndex - 1 + tracks.length) % tracks.length;
+    loadTrack(i);
+    playAudio();
+  });
+
+  nextBtn.addEventListener('click', () => {
+    if (isRadioMode) {
+      if (stations.length < 2) return;
+      const i = (currentStationIndex + 1) % stations.length;
+      loadStation(i);
+      playAudio();
+      return;
+    }
+    if (isDriveMode) {
+      if (driveSongs.length < 2) return;
+      const i = (currentDriveIndex + 1) % driveSongs.length;
+      loadDriveSong(i);
+      playAudio();
+      return;
+    }
+    if (tracks.length === 0) return;
+    let i = shuffleOn ? randomIndex() : (currentIndex + 1) % tracks.length;
+    loadTrack(i);
+    playAudio();
+  });
+
+  function randomIndex(){
+    if (tracks.length === 1) return 0;
+    let i;
+    do { i = Math.floor(Math.random() * tracks.length); } while (i === currentIndex);
+    return i;
+  }
+
+  shuffleBtn.addEventListener('click', () => {
+    shuffleOn = !shuffleOn;
+    shuffleBtn.classList.toggle('active', shuffleOn);
+  });
+
+  repeatBtn.addEventListener('click', () => {
+    repeatMode = (repeatMode + 1) % 3;
+    repeatBtn.classList.toggle('active', repeatMode !== 0);
+    repeatBtn.style.opacity = repeatMode === 2 ? '1' : '';
+    repeatBtn.title = repeatMode === 0 ? 'Repeat off' : repeatMode === 1 ? 'Repeat all' : 'Repeat one';
+  });
+
+  audio.addEventListener('ended', () => {
+    if (isRadioMode) return;
+    if (isDriveMode) {
+      if (repeatMode === 2) { audio.currentTime = 0; playAudio(); return; }
+      if (currentDriveIndex === driveSongs.length - 1 && repeatMode === 0) { pauseAudio(); return; }
+      loadDriveSong((currentDriveIndex + 1) % driveSongs.length);
+      playAudio();
+      return;
+    }
+    if (repeatMode === 2) {
+      audio.currentTime = 0;
+      playAudio();
+      return;
+    }
+    if (currentIndex === tracks.length - 1 && repeatMode === 0 && !shuffleOn) {
+      pauseAudio();
+      return;
+    }
+    let i = shuffleOn ? randomIndex() : (currentIndex + 1) % tracks.length;
+    loadTrack(i);
+    playAudio();
+  });
+
+  audio.addEventListener('timeupdate', () => {
+    if (isRadioMode) return;
+    if (!isNaN(audio.duration) && isFinite(audio.duration)) {
+      seek.value = (audio.currentTime / audio.duration) * 100;
+      timeCurrent.textContent = formatTime(audio.currentTime);
+    }
+  });
+
+  audio.addEventListener('loadedmetadata', () => {
+    timeDuration.textContent = formatTime(audio.duration);
+  });
+
+  seek.addEventListener('input', () => {
+    if (!isNaN(audio.duration)) {
+      audio.currentTime = (seek.value / 100) * audio.duration;
+    }
+  });
+
+  volume.addEventListener('input', () => {
+    audio.volume = volume.value;
+  });
+
+  audio.addEventListener('error', () => {
+    if (audio.error && audio.src) {
+      const label = isRadioMode ? 'This station' : isDriveMode ? 'This track' : 'This file';
+      showError(`${label} failed to load — the link may be offline, region-locked, or blocked by the browser. Try another one.`);
+      pauseAudio();
+    }
+  });
+
+  function formatTime(sec){
+    if (isNaN(sec)) return '0:00';
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  }
+
+  renderPlaylist();
+  loadStations();
+</script>
+
+</body>
+</html>
