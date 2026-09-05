@@ -1239,7 +1239,7 @@
       showError("Couldn't find a file ID in that link — make sure it's a Drive share link with sharing set to \"Anyone with the link\".");
       return;
     }
-    const playUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+    const playUrl =    `https://drive.google.com/uc?export=view&id=${fileId}`;
     driveSongs.push({ id: fileId, title, artist, playUrl });
     driveTitleInput.value = '';
     driveArtistInput.value = '';
