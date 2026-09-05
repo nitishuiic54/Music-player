@@ -888,7 +888,7 @@
       clearError();
       syncGoBtn.textContent = `Synced — ${added} new song${added === 1 ? '' : 's'} added`;
     } catch (e) {
-      showError("Couldn't reach that script — double-check the Web app URL and that access is set to \"Anyone,\" then try again.");
+      showError("SYNC ERROR: " + e.message);
       syncGoBtn.textContent = 'Sync folder';
     } finally {
       syncGoBtn.disabled = false;
